@@ -32,6 +32,13 @@ integration_agent_name() {
   basename "$1" .json
 }
 
+# Normalizes integrations/<agent>.json's `.settings` (a single object or an
+# array of objects) into one compact JSON object per line.
+list_settings_entries() {
+  local integration_json="$1"
+  jq -c 'if (.settings | type) == "array" then .settings[] else .settings end' "$integration_json"
+}
+
 agent_detected() {
   local integration_json="$1"
   local config_dir command_name
@@ -63,17 +70,20 @@ is_installed() {
     symlink_ok=true
   fi
 
-  settings_file="$(expand_tilde "$(jq -r '.settings.file' "$integration_json")")"
-  event="$(jq -r '.settings.event' "$integration_json")"
-  entry="$(jq -c '.settings.entry' "$integration_json")"
+  local settings_ok=true
+  while IFS= read -r settings_entry; do
+    [ -n "$settings_entry" ] || continue
+    settings_file="$(expand_tilde "$(jq -r '.file' <<<"$settings_entry")")"
+    event="$(jq -r '.event' <<<"$settings_entry")"
+    entry="$(jq -c '.entry' <<<"$settings_entry")"
 
-  local settings_ok=false
-  if [ -f "$settings_file" ]; then
-    if jq -e --arg event "$event" --argjson entry "$entry" \
+    if [ -f "$settings_file" ] && jq -e --arg event "$event" --argjson entry "$entry" \
       '(.hooks[$event] // []) | any(. == $entry)' "$settings_file" >/dev/null 2>&1; then
-      settings_ok=true
+      : # this entry is present
+    else
+      settings_ok=false
     fi
-  fi
+  done < <(list_settings_entries "$integration_json")
 
   if [ "$symlink_ok" = true ] && [ "$settings_ok" = true ]; then
     printf 'true'
@@ -99,14 +109,15 @@ prepare_link_dir() {
 }
 
 settings_merge() {
-  local file="$1" event="$2" entry="$3"
+  local file="$1" event="$2" entry="$3" base_fields="${4:-{\}}"
   local dir tmp content
   dir="$(dirname "$file")"
   mkdir -p "$dir"
   content='{}'
   [ -f "$file" ] && content="$(cat "$file")"
   tmp="$(mktemp "$dir/.settings.XXXXXX")"
-  printf '%s' "$content" | jq --arg event "$event" --argjson entry "$entry" '
+  printf '%s' "$content" | jq --arg event "$event" --argjson entry "$entry" --argjson base "$base_fields" '
+    reduce ($base | to_entries[]) as $kv (.; if has($kv.key) then . else .[$kv.key] = $kv.value end) |
     .hooks = (.hooks // {}) |
     .hooks[$event] = (.hooks[$event] // []) |
     if (.hooks[$event] | any(. == $entry))

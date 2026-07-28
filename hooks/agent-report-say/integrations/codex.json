@@ -1,0 +1,12 @@
+{
+  "detect": { "configDir": "~/.codex", "command": "codex" },
+  "link": { "dir": "~/.codex/hooks" },
+  "settings": {
+    "file": "~/.codex/hooks.json",
+    "event": "Stop",
+    "entry": {
+      "type": "command",
+      "command": "\"$HOME/.codex/hooks/agent-report-say.sh\" codex"
+    }
+  }
+}

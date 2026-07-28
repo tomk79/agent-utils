@@ -23,7 +23,7 @@ SKIPPED_COUNT=0
 uninstall_one() {
   local feature_dir="$1" integration_json="$2"
   local name agent script link_dir_raw link_dir target
-  local settings_file event entry did_something=false
+  local settings_entry settings_file event entry did_something=false
 
   name="$(jq -r '.name' "$feature_dir/meta.json")"
   agent="$(integration_agent_name "$integration_json")"
@@ -31,9 +31,6 @@ uninstall_one() {
   link_dir_raw="$(jq -r '.link.dir' "$integration_json")"
   link_dir="$(expand_tilde "$link_dir_raw")"
   target="$link_dir/$(basename "$script")"
-  settings_file="$(expand_tilde "$(jq -r '.settings.file' "$integration_json")")"
-  event="$(jq -r '.settings.event' "$integration_json")"
-  entry="$(jq -c '.settings.entry' "$integration_json")"
 
   if [ -L "$target" ] && [ "$(readlink "$target")" = "$script" ]; then
     rm "$target"
@@ -42,11 +39,18 @@ uninstall_one() {
     echo "⚠ skip: $name ($agent) - $target はこのリポジトリの管理下ではないため残します" >&2
   fi
 
-  if [ -f "$settings_file" ] && jq -e --arg event "$event" --argjson entry "$entry" \
-    '(.hooks[$event] // []) | any(. == $entry)' "$settings_file" >/dev/null 2>&1; then
-    settings_remove "$settings_file" "$event" "$entry"
-    did_something=true
-  fi
+  while IFS= read -r settings_entry; do
+    [ -n "$settings_entry" ] || continue
+    settings_file="$(expand_tilde "$(jq -r '.file' <<<"$settings_entry")")"
+    event="$(jq -r '.event' <<<"$settings_entry")"
+    entry="$(jq -c '.entry' <<<"$settings_entry")"
+
+    if [ -f "$settings_file" ] && jq -e --arg event "$event" --argjson entry "$entry" \
+      '(.hooks[$event] // []) | any(. == $entry)' "$settings_file" >/dev/null 2>&1; then
+      settings_remove "$settings_file" "$event" "$entry"
+      did_something=true
+    fi
+  done < <(list_settings_entries "$integration_json")
 
   if [ "$did_something" = true ]; then
     echo "✓ uninstalled: $name ($agent)"

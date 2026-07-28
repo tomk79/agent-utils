@@ -1,0 +1,13 @@
+{
+  "detect": { "configDir": "~/.cursor", "command": "cursor-agent" },
+  "link": { "dir": "~/.cursor/hooks" },
+  "settings": {
+    "file": "~/.cursor/hooks.json",
+    "baseFields": { "version": 1 },
+    "event": "stop",
+    "entry": {
+      "type": "command",
+      "command": "\"$HOME/.cursor/hooks/agent-report-say.sh\" cursor"
+    }
+  }
+}

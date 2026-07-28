@@ -1,0 +1,13 @@
+{
+  "detect": { "configDir": "~/.copilot", "command": "copilot" },
+  "link": { "dir": "~/.copilot/hooks-scripts" },
+  "settings": {
+    "file": "~/.copilot/hooks/agent-utils.json",
+    "baseFields": { "version": 1 },
+    "event": "agentStop",
+    "entry": {
+      "type": "command",
+      "bash": "\"$HOME/.copilot/hooks-scripts/agent-report-say.sh\" copilot"
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "detect": { "configDir": "~/.codex", "command": "codex" },
+  "link": { "dir": "~/.codex/hooks" },
+  "settings": {
+    "file": "~/.codex/hooks.json",
+    "event": "PermissionRequest",
+    "entry": {
+      "type": "command",
+      "command": "\"$HOME/.codex/hooks/agent-notification-say.sh\" codex"
+    }
+  }
+}
