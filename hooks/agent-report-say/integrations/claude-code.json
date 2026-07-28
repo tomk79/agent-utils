@@ -1,0 +1,13 @@
+{
+  "detect": { "configDir": "~/.claude", "command": "claude" },
+  "link": { "dir": "~/.claude/hooks" },
+  "settings": {
+    "file": "~/.claude/settings.json",
+    "event": "Stop",
+    "entry": {
+      "hooks": [
+        { "type": "command", "command": "\"$HOME/.claude/hooks/agent-report-say.sh\" claude" }
+      ]
+    }
+  }
+}

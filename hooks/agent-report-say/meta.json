@@ -1,0 +1,4 @@
+{
+  "name": "agent-report-say",
+  "description": "ターン終了時に、作業内容の要約をmacOSのsayコマンドで音声読み上げする"
+}

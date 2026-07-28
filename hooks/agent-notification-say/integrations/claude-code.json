@@ -1,0 +1,14 @@
+{
+  "detect": { "configDir": "~/.claude", "command": "claude" },
+  "link": { "dir": "~/.claude/hooks" },
+  "settings": {
+    "file": "~/.claude/settings.json",
+    "event": "Notification",
+    "entry": {
+      "matcher": "permission_prompt",
+      "hooks": [
+        { "type": "command", "command": "\"$HOME/.claude/hooks/agent-notification-say.sh\" claude" }
+      ]
+    }
+  }
+}

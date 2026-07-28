@@ -1,0 +1,4 @@
+{
+  "name": "agent-notification-say",
+  "description": "ツール実行の許可待ち(permission prompt)を、macOSのsayコマンドで音声通知する"
+}
