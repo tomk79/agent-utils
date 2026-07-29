@@ -68,7 +68,12 @@ fi
 
 raw="$(printf '%s' "$message" | tr '\n\r' '  ' | cut -c1-200)"
 
-if [ "${AGENT_REPORT_SUMMARIZING:-}" = "1" ] || ! command -v claude >/dev/null 2>&1; then
+# Recursive invocation from our own summarizer's `claude -p` call below
+# (it fires this same Stop hook via the user's Claude Code settings) -
+# stay silent, the outer call already speaks the summary.
+[ "${AGENT_REPORT_SUMMARIZING:-}" = "1" ] && exit 0
+
+if ! command -v claude >/dev/null 2>&1; then
   speak "$raw"
   exit 0
 fi
