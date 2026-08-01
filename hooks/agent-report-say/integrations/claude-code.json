@@ -6,7 +6,7 @@
     "event": "Stop",
     "entry": {
       "hooks": [
-        { "type": "command", "command": "\"$HOME/.claude/hooks/agent-report-say.sh\" claude" }
+        { "type": "command", "command": "\"$HOME/.claude/hooks/agent-report-say.sh\" claude", "async": true }
       ]
     }
   }
