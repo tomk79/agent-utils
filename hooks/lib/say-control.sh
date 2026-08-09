@@ -98,13 +98,16 @@ agent_utils_say_duplicate_recent() {
   [ "$last_hash" = "$text_hash" ]
 }
 
-agent_utils_cursor_begin_strong_request() {
+agent_utils_cursor_begin_request() {
   local tool="$1" payload="$2"
+  local required_strength="${3:-any}"
   local session_info strength session_hash base_dir state_dir lock_dir latest_file request_id
 
   session_info="$(agent_utils_cursor_session_info "$tool" "$payload")" || return 1
   strength="${session_info%% *}"
-  [ "$strength" = "strong" ] || return 1
+  if [ "$required_strength" = "strong" ] && [ "$strength" != "strong" ]; then
+    return 1
+  fi
   session_hash="${session_info#* }"
 
   base_dir="${TMPDIR:-/tmp}/agent-utils-say"
@@ -119,6 +122,10 @@ agent_utils_cursor_begin_strong_request() {
   agent_utils_say_unlock "$lock_dir"
 
   printf '%s\n%s\n' "$latest_file" "$request_id"
+}
+
+agent_utils_cursor_begin_strong_request() {
+  agent_utils_cursor_begin_request "$1" "$2" strong
 }
 
 agent_utils_say_request_is_latest() {
@@ -227,7 +234,7 @@ agent_utils_cursor_speak() {
   request_id="$(agent_utils_say_now).$$.$RANDOM"
   printf '%s\n' "$request_id" > "$latest_file"
 
-  if [ "$strength" = "strong" ] && [ "$old_alive" = true ]; then
+  if { [ "$strength" = "strong" ] || [ "${AGENT_UTILS_CURSOR_KILL_WEAK:-}" = "1" ]; } && [ "$old_alive" = true ]; then
     old_child_pid="$(cat "$child_file" 2>/dev/null || true)"
     if agent_utils_say_child_pid_alive "$old_child_pid"; then
       kill "$old_child_pid" 2>/dev/null || true

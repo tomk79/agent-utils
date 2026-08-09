@@ -22,15 +22,21 @@ agent-report-say.sh <tool> [outcome]
 
 JSON オブジェクト。使用するのは以下のフィールドのみ:
 
-- `.last_assistant_message`（string, 任意）: Codex 等が渡す、直近のアシスタント発話。存在すれば最優先で使用する。
+- `.last_assistant_message` / `.last_agent_message`（string, 任意）: Codex 等が渡す、直近のアシスタント発話。Codex の場合はトランスクリプト内の `final_answer` を優先し、それが取れない場合に使用する。
 - `.transcript_path` または `.transcriptPath`（string, 任意）: `.last_assistant_message` が無い場合に参照するトランスクリプトファイルのパス。
 
 ### トランスクリプトからの抽出
 
-`.last_assistant_message` が空の場合:
+Codex の場合:
+
+1. `transcript_path`（または `transcriptPath`）が指すファイルの末尾500行を読む
+2. Codex transcript の `response_item` / `event_msg` から `phase == "final_answer"` の assistant message、または `task_complete.last_agent_message` を候補にし、最後の1件を採用する
+3. 取得できない場合のみ、hook payload の `.last_assistant_message` / `.last_agent_message` にフォールバックする
+
+Codex 以外、または Codex の専用抽出で取れなかった場合:
 
 1. `transcript_path`（または `transcriptPath`）が指すファイルの末尾200行を読む
-2. 各行を JSON としてパースし、`.type == "assistant"`（Claude Code のスキーマ）または `.role == "assistant"`（他エージェントのスキーマ）に該当する行の `.message.content[]` から `.type == "text"` の要素の `.text` を集め、最後の1件を採用する
+2. 各行を JSON としてパースし、`.type == "assistant"`（Claude Code のスキーマ）または `.role == "assistant"`（他エージェントのスキーマ）に該当する行の text 要素を集め、最後の1件を採用する
 
 ### 出力
 
@@ -80,9 +86,9 @@ JSON オブジェクト。使用するのは以下のフィールドのみ:
 4. `say "以上です。"`
 5. `Bottle.aiff` システムサウンドを再生
 
-Cursor では `hooks/lib/say-control.sh` が読み込める場合、2.5秒のデバウンスを行う。`conversation_id` または `transcript_path` からセッションを識別できる場合のみ、同一セッションの先行読み上げ worker を停止する。`workspace_roots[0]` しか無い場合はデバウンスのみ行い、先行読み上げは停止しない。同一セッションで同一文面の完了報告が読み上げ完了後30秒以内に再発火した場合は抑制する。
+Cursor では `hooks/lib/say-control.sh` が読み込める場合、2.5秒のデバウンスを行う。`conversation_id` または `transcript_path` からセッションを識別できる場合は strong session key として扱い、同一セッションの先行読み上げ worker を停止する。`workspace_roots[0]` しか無い場合は weak session key として扱う。完了報告では、複数の Stop hook が同一 workspace で連続発火するケースを抑制するため、weak session key でも最新 request id の判定と先行読み上げ停止を行う。同一セッションで同一文面の完了報告が読み上げ完了後30秒以内に再発火した場合は抑制する。
 
-Cursor の完了報告で要約生成を行う場合、strong session key が取れた時だけ要約ジョブにも最新 request id を付与する。後続の Stop hook が同一セッションで発火した場合、古い要約ジョブは完走しても読み上げ登録前に破棄する。要約ジョブ自体は kill しない。
+Cursor の完了報告で要約生成を行う場合、session key が取れた時は要約ジョブにも最新 request id を付与する。後続の Stop hook が同一セッションまたは同一 workspace で発火した場合、古い要約ジョブは完走しても読み上げ登録前に破棄する。要約ジョブ自体は kill しない。
 
 ## 非機能要件
 

@@ -149,7 +149,7 @@ Codex / Cursor / GitHub Copilot は Claude Code ほどフック機構が枯れ�
 - Cursor の `agent-notification-say` は、許可プロンプト表示専用の検知イベントが無いため、`beforeShellExecution` / `beforeMCPExecution` に相乗りした「ツール実行前通知」として扱う。「承認してください」という文言は使わない。判定結果は上書きせず常に Cursor の既定挙動に委ねる。
 - GitHub Copilot の `agent-notification-say` は、許可プロンプト表示専用の検知イベントが無いため、実際の許可可否判定フック（`permissionRequest`）に相乗りする。判定結果は上書きせず常に既定挙動に委ねる。自動承認されるケースでも音声が鳴ることがあり、Claude Code より通知頻度が高くなる場合がある。
 - Cursor / GitHub Copilot の `agent-report-say` は、会話要約に使うトランスクリプトの取得方法・書式がエージェントごとに異なる（Cursor はトランスクリプト機能が有効な場合のみ、Copilot はファイル書式が非公開のためベストエフォート）。要約テキストが取得できない場合は、内容なしの定型メッセージにフォールバックする。
-- Cursor の `agent-notification-say` / `agent-report-say` は、同一セッション内で後勝ちの読み上げ制御を行う。`conversation_id` または `transcript_path` が取得できる場合を strong session key とし、デバウンスと同一セッションの先行読み上げ停止を行う。`workspace_roots[0]` しか取得できない場合は weak session key とし、デバウンスのみ行い、別セッションの最終報告を止めないため先行読み上げ停止は行わない。セッションキーが取得できない場合は制御せず即時読み上げにフォールバックする。
+- Cursor の `agent-notification-say` / `agent-report-say` は、同一セッション内で後勝ちの読み上げ制御を行う。`conversation_id` または `transcript_path` が取得できる場合を strong session key とし、デバウンスと同一セッションの先行読み上げ停止を行う。`workspace_roots[0]` しか取得できない場合は weak session key とする。`agent-notification-say` は weak session key ではデバウンスのみ行い、別セッションの通知を止めないため先行読み上げ停止は行わない。`agent-report-say` は Stop hook が同一 workspace で複数回発火するケースを抑えるため、weak session key でも最新 request id の判定と先行読み上げ停止を行う。セッションキーが取得できない場合は制御せず即時読み上げにフォールバックする。
 
 ## 8. 依存関係・前提環境
 
