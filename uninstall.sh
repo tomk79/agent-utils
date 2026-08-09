@@ -34,6 +34,7 @@ uninstall_one() {
 
   if [ -L "$target" ] && [ "$(readlink "$target")" = "$script" ]; then
     rm "$target"
+    uninstall_shared_hook_lib_if_unused "$link_dir"
     did_something=true
   elif [ -e "$target" ] || [ -L "$target" ]; then
     echo "⚠ skip: $name ($agent) - $target はこのリポジトリの管理下ではないため残します" >&2

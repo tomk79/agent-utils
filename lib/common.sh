@@ -22,6 +22,15 @@ feature_script() {
   printf '%s/%s.sh' "$feature_dir" "$(basename "$feature_dir")"
 }
 
+shared_hook_lib() {
+  printf '%s/hooks/lib' "$REPO_ROOT"
+}
+
+shared_hook_lib_target() {
+  local link_dir="$1"
+  printf '%s/agent-utils-lib' "$link_dir"
+}
+
 list_integrations() {
   local feature_dir="$1"
   [ -d "$feature_dir/integrations" ] || return 0
@@ -106,6 +115,59 @@ prepare_link_dir() {
     esac
   fi
   mkdir -p "$link_dir"
+}
+
+install_shared_hook_lib() {
+  local link_dir="$1"
+  local lib_dir target
+
+  lib_dir="$(shared_hook_lib)"
+  [ -d "$lib_dir" ] || return 0
+
+  target="$(shared_hook_lib_target "$link_dir")"
+  if [ -L "$target" ] && [ "$(readlink "$target")" = "$lib_dir" ]; then
+    return 0
+  fi
+  if [ -e "$target" ] || [ -L "$target" ]; then
+    echo "⚠ skip: shared hook lib - $target が既に存在し、このリポジトリの管理下ではありません" >&2
+    return 0
+  fi
+  ln -s "$lib_dir" "$target"
+}
+
+managed_hook_links_count() {
+  local link_dir="$1"
+  local count=0 path resolved
+
+  [ -d "$link_dir" ] || {
+    printf '0'
+    return 0
+  }
+
+  for path in "$link_dir"/*.sh; do
+    [ -L "$path" ] || continue
+    resolved="$(readlink "$path")"
+    case "$resolved" in
+      "$REPO_ROOT"/hooks/*)
+        count=$((count + 1))
+        ;;
+    esac
+  done
+
+  printf '%s' "$count"
+}
+
+uninstall_shared_hook_lib_if_unused() {
+  local link_dir="$1"
+  local lib_dir target
+
+  lib_dir="$(shared_hook_lib)"
+  target="$(shared_hook_lib_target "$link_dir")"
+
+  [ "$(managed_hook_links_count "$link_dir")" = "0" ] || return 0
+  if [ -L "$target" ] && [ "$(readlink "$target")" = "$lib_dir" ]; then
+    rm "$target"
+  fi
 }
 
 settings_merge() {

@@ -25,6 +25,25 @@ outcome="${2:-done}" # done | gaveup
 
 payload="$(cat 2>/dev/null || true)"
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -r "$script_dir/agent-utils-lib/say-control.sh" ]; then
+  # shellcheck source=/dev/null
+  source "$script_dir/agent-utils-lib/say-control.sh"
+else
+  script_real="$script_dir/$(basename "${BASH_SOURCE[0]}")"
+  if [ -L "$script_real" ]; then
+    script_real="$(readlink "$script_real")"
+    script_real_dir="$(cd "$(dirname "$script_real")" && pwd)"
+    if [ -r "$script_real_dir/../lib/say-control.sh" ]; then
+      # shellcheck source=/dev/null
+      source "$script_real_dir/../lib/say-control.sh"
+    fi
+  elif [ -r "$script_dir/../lib/say-control.sh" ]; then
+    # shellcheck source=/dev/null
+    source "$script_dir/../lib/say-control.sh"
+  fi
+fi
+
 [ "$(uname -s 2>/dev/null)" = "Darwin" ] || exit 0
 command -v say >/dev/null 2>&1 || exit 0
 
@@ -62,6 +81,16 @@ fallback="${tool} の作業が完了しました。"
 [ "$outcome" = "gaveup" ] && fallback="${tool} の作業が終了しました。テストは失敗したままです。"
 
 if [ -z "$message" ]; then
+  if [ "$tool" = "cursor" ] && declare -f agent_utils_cursor_speak >/dev/null 2>&1; then
+    if agent_utils_cursor_speak "$tool" "$payload" 2.5 30 "$fallback" \
+      sound /System/Library/Sounds/Glass.aiff \
+      say "報告します。" \
+      say "$fallback" \
+      say "以上です。" \
+      sound /System/Library/Sounds/Bottle.aiff; then
+      exit 0
+    fi
+  fi
   speak "$fallback"
   exit 0
 fi
@@ -74,6 +103,16 @@ raw="$(printf '%s' "$message" | tr '\n\r' '  ' | cut -c1-200)"
 [ "${AGENT_REPORT_SUMMARIZING:-}" = "1" ] && exit 0
 
 if ! command -v claude >/dev/null 2>&1; then
+  if [ "$tool" = "cursor" ] && declare -f agent_utils_cursor_speak >/dev/null 2>&1; then
+    if agent_utils_cursor_speak "$tool" "$payload" 2.5 30 "$raw" \
+      sound /System/Library/Sounds/Glass.aiff \
+      say "報告します。" \
+      say "$raw" \
+      say "以上です。" \
+      sound /System/Library/Sounds/Bottle.aiff; then
+      exit 0
+    fi
+  fi
   speak "$raw"
   exit 0
 fi
@@ -93,6 +132,16 @@ ${message}"
   summary="$(printf '%s' "$summary" | tr '\n\r' '  ' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | cut -c1-200)"
 
   [ -z "$summary" ] && summary="$raw"
+  if [ "$tool" = "cursor" ] && declare -f agent_utils_cursor_speak >/dev/null 2>&1; then
+    if agent_utils_cursor_speak "$tool" "$payload" 2.5 30 "$summary" \
+      sound /System/Library/Sounds/Glass.aiff \
+      say "報告します。" \
+      say "$summary" \
+      say "以上です。" \
+      sound /System/Library/Sounds/Bottle.aiff; then
+      exit 0
+    fi
+  fi
   speak "$summary"
 ) &
 disown 2>/dev/null || true

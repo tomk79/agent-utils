@@ -35,6 +35,7 @@ install_one() {
   target="$link_dir/$(basename "$script")"
 
   prepare_link_dir "$link_dir"
+  install_shared_hook_lib "$link_dir"
 
   if [ -L "$target" ] && [ "$(readlink "$target")" = "$script" ]; then
     : # already the correct symlink, nothing to do

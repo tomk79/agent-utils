@@ -11,11 +11,13 @@
     ├── codex.json             # Codex CLI 向けの導入設定
     ├── cursor.json            # Cursor CLI 向けの導入設定
     └── copilot.json           # GitHub Copilot CLI 向けの導入設定
+hooks/lib/
+└── *.sh                       # 複数 hook で共有する補助スクリプト
 ```
 
 - 現時点でのカテゴリは `hooks/` のみ。
 - 機能ディレクトリは `find <REPO_ROOT> -mindepth 3 -maxdepth 3 -name meta.json` で自動検出される（`lib/common.sh` の `discover_features`）。すなわち `<カテゴリ>/<機能名>/meta.json` というパス階層は固定であり、ネストを変えてはならない。
-- 1つの `<機能名>.sh` を全エージェントで共有し、対応関係やイベント名の差異は `integrations/*.json` 側に閉じ込める。エージェント固有の分岐をスクリプト本体に持ち込まない。
+- 1つの `<機能名>.sh` を全エージェントで共有し、対応関係やイベント名の差異は `integrations/*.json` 側に閉じ込める。フックイベントの品質差やペイロード差に起因する最小限のエージェント固有処理は、スクリプト本体または `hooks/lib/` の補助スクリプトに置く。
 
 ## 2. `meta.json` スキーマ
 
@@ -67,6 +69,7 @@
 
 - インストール先パス: `<link.dir展開後>/<機能スクリプトのbasename>`（例: `~/.claude/hooks/agent-notification-say.sh`）
 - リンク元: リポジトリ内の `<機能ディレクトリ>/<機能名>.sh` の絶対パス
+- `hooks/lib/` が存在する場合、同じ `link.dir` に `agent-utils-lib -> <REPO_ROOT>/hooks/lib` のシンボリックリンクを作成する。既に本リポジトリ管理外の実体がある場合は上書きしない。
 - 対象パスが存在せず未使用 → シンボリックリンクを新規作成
 - 対象パスが既に本リポジトリが管理する同一シンボリックリンク → 何もしない（冪等）
 - 対象パスが別の実体（本リポジトリ管理外のファイル/リンク）として既に存在 → **上書きしない。スキップしてスキップ件数にカウントし、警告を表示する**
@@ -119,6 +122,7 @@
 - 候補が0件なら「アンインストール対象の機能は見つかりませんでした」と表示して終了。
 - `uninstall_one` の処理:
   - シンボリックリンクが本リポジトリ管理下の正しいリンクであれば削除する
+  - 削除後、同じ `link.dir` に本リポジトリ管理下の hook シンボリックリンクが残っていなければ、`agent-utils-lib` シンボリックリンクも削除する
   - 別の実体が存在する場合は削除せず警告のみ（本リポジトリ管理外のファイルは触らない）
   - 各 `settings` エントリについて、対象ファイルに entry が存在すれば `settings_remove` で除去する
   - シンボリックリンク削除または設定除去のいずれかを実行した場合のみ「uninstalled」として件数にカウントする。何も対象が無かった場合は「not installed, skip」として扱う
@@ -141,8 +145,10 @@
 
 Codex / Cursor / GitHub Copilot は Claude Code ほどフック機構が枯れていないため、以下の制約がある（README.md 記載の内容を仕様として明記する）:
 
-- Cursor / GitHub Copilot の `agent-notification-say` は、許可プロンプト表示専用の検知イベントが無いため、実際の許可可否判定フック（Cursor: `beforeShellExecution` / `beforeMCPExecution`、Copilot: `permissionRequest`）に相乗りする。判定結果は上書きせず常に各エージェントの既定挙動に委ねる。自動承認されるケースでも音声が鳴ることがあり、Claude Code より通知頻度が高くなる場合がある。
+- Cursor の `agent-notification-say` は、許可プロンプト表示専用の検知イベントが無いため、`beforeShellExecution` / `beforeMCPExecution` に相乗りした「ツール実行前通知」として扱う。「承認してください」という文言は使わない。判定結果は上書きせず常に Cursor の既定挙動に委ねる。
+- GitHub Copilot の `agent-notification-say` は、許可プロンプト表示専用の検知イベントが無いため、実際の許可可否判定フック（`permissionRequest`）に相乗りする。判定結果は上書きせず常に既定挙動に委ねる。自動承認されるケースでも音声が鳴ることがあり、Claude Code より通知頻度が高くなる場合がある。
 - Cursor / GitHub Copilot の `agent-report-say` は、会話要約に使うトランスクリプトの取得方法・書式がエージェントごとに異なる（Cursor はトランスクリプト機能が有効な場合のみ、Copilot はファイル書式が非公開のためベストエフォート）。要約テキストが取得できない場合は、内容なしの定型メッセージにフォールバックする。
+- Cursor の `agent-notification-say` / `agent-report-say` は、同一セッション内で後勝ちの読み上げ制御を行う。`conversation_id` または `transcript_path` が取得できる場合を strong session key とし、デバウンスと同一セッションの先行読み上げ停止を行う。`workspace_roots[0]` しか取得できない場合は weak session key とし、デバウンスのみ行い、別セッションの最終報告を止めないため先行読み上げ停止は行わない。セッションキーが取得できない場合は制御せず即時読み上げにフォールバックする。
 
 ## 8. 依存関係・前提環境
 

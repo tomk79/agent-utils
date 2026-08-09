@@ -42,7 +42,9 @@ cd agent-utils
 
 Codex / Cursor / GitHub Copilot は Claude Code ほど枯れていないフック機構のため、下記の制約があります。
 
-- Cursor / GitHub Copilot の `agent-notification-say` は、許可プロンプトの表示だけを検知する専用イベントが無く、実際に許可の可否を判定するフック（Cursor: `beforeShellExecution`/`beforeMCPExecution`、Copilot: `permissionRequest`）に相乗りしています。判定結果は上書きせず常に各エージェントの既定の挙動に委ねますが、自動承認されるケースでも音声が鳴ることがあり、Claude Code より通知頻度が高くなる場合があります。
+- Cursor の `agent-notification-say` は、許可プロンプト表示専用イベントが無いため、`beforeShellExecution`/`beforeMCPExecution` に相乗りした「ツール実行前通知」として読み上げます。「承認してください」とは読み上げません。
+- GitHub Copilot の `agent-notification-say` は、許可プロンプトの表示だけを検知する専用イベントが無く、実際に許可の可否を判定する `permissionRequest` に相乗りしています。判定結果は上書きせず常に各エージェントの既定の挙動に委ねますが、自動承認されるケースでも音声が鳴ることがあり、Claude Code より通知頻度が高くなる場合があります。
+- Cursor の読み上げは、同一セッション内で後から来た通知を優先します。`conversation_id` または `transcript_path` が取れる場合のみ、同一セッションの先行読み上げを停止します。
 - Cursor / GitHub Copilot の `agent-report-say` は、会話内容の要約に使うトランスクリプトの取得方法・書式がエージェントによって異なります（Cursor はトランスクリプト機能が有効な場合のみ、Copilot はファイル書式が非公開のためベストエフォート）。要約テキストが取得できない場合は、内容なしの定型メッセージにフォールバックします。
 
 ## 提供している機能
