@@ -5,8 +5,12 @@
     "file": "~/.codex/hooks.json",
     "event": "Stop",
     "entry": {
-      "type": "command",
-      "command": "\"$HOME/.codex/hooks/agent-report-say.sh\" codex"
+      "hooks": [
+        {
+          "type": "command",
+          "command": "\"$HOME/.codex/hooks/agent-report-say.sh\" codex"
+        }
+      ]
     }
   }
 }

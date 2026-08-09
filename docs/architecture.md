@@ -145,6 +145,7 @@ hooks/lib/
 
 Codex / Cursor / GitHub Copilot は Claude Code ほどフック機構が枯れていないため、以下の制約がある（README.md 記載の内容を仕様として明記する）:
 
+- Codex の `agent-notification-say` / `agent-report-say` は、ユーザーレベルの `~/.codex/hooks.json` に導入する。非 managed command hook は Codex CLI 内の `/hooks` で review/trust されるまで実行されないため、インストーラは trust state を直接編集せず、導入後に手動 trust を案内する。
 - Cursor の `agent-notification-say` は、許可プロンプト表示専用の検知イベントが無いため、`beforeShellExecution` / `beforeMCPExecution` に相乗りした「ツール実行前通知」として扱う。「承認してください」という文言は使わない。判定結果は上書きせず常に Cursor の既定挙動に委ねる。
 - GitHub Copilot の `agent-notification-say` は、許可プロンプト表示専用の検知イベントが無いため、実際の許可可否判定フック（`permissionRequest`）に相乗りする。判定結果は上書きせず常に既定挙動に委ねる。自動承認されるケースでも音声が鳴ることがあり、Claude Code より通知頻度が高くなる場合がある。
 - Cursor / GitHub Copilot の `agent-report-say` は、会話要約に使うトランスクリプトの取得方法・書式がエージェントごとに異なる（Cursor はトランスクリプト機能が有効な場合のみ、Copilot はファイル書式が非公開のためベストエフォート）。要約テキストが取得できない場合は、内容なしの定型メッセージにフォールバックする。

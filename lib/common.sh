@@ -179,9 +179,14 @@ settings_merge() {
   [ -f "$file" ] && content="$(cat "$file")"
   tmp="$(mktemp "$dir/.settings.XXXXXX")"
   printf '%s' "$content" | jq --arg event "$event" --argjson entry "$entry" --argjson base "$base_fields" '
+    def migrate_legacy_handler($entry):
+      if (($entry | type) == "object") and (($entry.hooks | type) == "array") and (($entry.hooks | length) == 1)
+      then map(if . == $entry.hooks[0] then $entry else . end)
+      else .
+      end;
     reduce ($base | to_entries[]) as $kv (.; if has($kv.key) then . else .[$kv.key] = $kv.value end) |
     .hooks = (.hooks // {}) |
-    .hooks[$event] = (.hooks[$event] // []) |
+    .hooks[$event] = ((.hooks[$event] // []) | migrate_legacy_handler($entry)) |
     if (.hooks[$event] | any(. == $entry))
     then .
     else .hooks[$event] += [$entry]

@@ -117,6 +117,16 @@ if ! command -v claude >/dev/null 2>&1; then
   exit 0
 fi
 
+cursor_latest_file=""
+cursor_request_id=""
+if [ "$tool" = "cursor" ] && declare -f agent_utils_cursor_begin_strong_request >/dev/null 2>&1; then
+  cursor_request_info="$(agent_utils_cursor_begin_strong_request "$tool" "$payload" 2>/dev/null || true)"
+  if [ -n "$cursor_request_info" ]; then
+    cursor_latest_file="$(printf '%s\n' "$cursor_request_info" | sed -n '1p')"
+    cursor_request_id="$(printf '%s\n' "$cursor_request_info" | sed -n '2p')"
+  fi
+fi
+
 (
   export AGENT_REPORT_SUMMARIZING=1
   prompt="次のエージェント出力を、音声で聞いてすぐ理解できる自然な日本語1〜2文に要約してください。ファイルパス・変数名・関数名・テーブル名・コードスニペットなどの技術的な固有名詞は具体名を出さず、意味だけを自然な言葉で言い換えてください。要約文以外は出力しないでください。
@@ -132,6 +142,9 @@ ${message}"
   summary="$(printf '%s' "$summary" | tr '\n\r' '  ' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | cut -c1-200)"
 
   [ -z "$summary" ] && summary="$raw"
+  if [ -n "$cursor_request_id" ] && declare -f agent_utils_say_request_is_latest >/dev/null 2>&1; then
+    agent_utils_say_request_is_latest "$cursor_latest_file" "$cursor_request_id" || exit 0
+  fi
   if [ "$tool" = "cursor" ] && declare -f agent_utils_cursor_speak >/dev/null 2>&1; then
     if agent_utils_cursor_speak "$tool" "$payload" 2.5 30 "$summary" \
       sound /System/Library/Sounds/Glass.aiff \

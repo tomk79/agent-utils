@@ -5,8 +5,12 @@
     "file": "~/.codex/hooks.json",
     "event": "PermissionRequest",
     "entry": {
-      "type": "command",
-      "command": "\"$HOME/.codex/hooks/agent-notification-say.sh\" codex"
+      "hooks": [
+        {
+          "type": "command",
+          "command": "\"$HOME/.codex/hooks/agent-notification-say.sh\" codex"
+        }
+      ]
     }
   }
 }

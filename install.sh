@@ -21,6 +21,7 @@ fi
 INSTALLED_COUNT=0
 SKIPPED_COUNT=0
 ALREADY_COUNT=0
+CODEX_TRUST_NOTICE=false
 
 install_one() {
   local feature_dir="$1" integration_json="$2"
@@ -55,6 +56,10 @@ install_one() {
     base_fields="$(jq -c '.baseFields // {}' <<<"$settings_entry")"
     settings_merge "$settings_file" "$event" "$entry" "$base_fields"
   done < <(list_settings_entries "$integration_json")
+
+  if [ "$agent" = "codex" ]; then
+    CODEX_TRUST_NOTICE=true
+  fi
 
   echo "✓ installed: $name ($agent)"
   INSTALLED_COUNT=$((INSTALLED_COUNT + 1))
@@ -137,3 +142,7 @@ done
 
 echo
 echo "完了: $INSTALLED_COUNT 件インストール, $SKIPPED_COUNT 件スキップ"
+if [ "$CODEX_TRUST_NOTICE" = true ]; then
+  echo
+  echo "Codex の hook は初回導入後、Codex CLI 内で /hooks を開いて内容を確認し、trust するまで実行されません。"
+fi

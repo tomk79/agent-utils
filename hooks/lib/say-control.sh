@@ -98,6 +98,36 @@ agent_utils_say_duplicate_recent() {
   [ "$last_hash" = "$text_hash" ]
 }
 
+agent_utils_cursor_begin_strong_request() {
+  local tool="$1" payload="$2"
+  local session_info strength session_hash base_dir state_dir lock_dir latest_file request_id
+
+  session_info="$(agent_utils_cursor_session_info "$tool" "$payload")" || return 1
+  strength="${session_info%% *}"
+  [ "$strength" = "strong" ] || return 1
+  session_hash="${session_info#* }"
+
+  base_dir="${TMPDIR:-/tmp}/agent-utils-say"
+  state_dir="$base_dir/$session_hash"
+  lock_dir="$state_dir.lock"
+  latest_file="$state_dir/latest"
+
+  mkdir -p "$state_dir" || return 1
+  agent_utils_say_lock "$lock_dir" || return 1
+  request_id="$(agent_utils_say_now).$$.$RANDOM"
+  printf '%s\n' "$request_id" > "$latest_file"
+  agent_utils_say_unlock "$lock_dir"
+
+  printf '%s\n%s\n' "$latest_file" "$request_id"
+}
+
+agent_utils_say_request_is_latest() {
+  local latest_file="$1" request_id="$2"
+  [ -n "$latest_file" ] || return 1
+  [ -n "$request_id" ] || return 1
+  [ "$(cat "$latest_file" 2>/dev/null)" = "$request_id" ]
+}
+
 agent_utils_say_run_sequence() {
   local state_dir="$1" latest_file="$2" request_id="$3" debounce="$4" dedupe_ttl="$5" dedupe_text="$6"
   shift 6
