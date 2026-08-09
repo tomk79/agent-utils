@@ -6,12 +6,11 @@
 # tries, in order: Codex's final answer in the transcript, hook-provided
 # assistant message fields, then the last assistant text block in the transcript
 # the payload points to, then falls back to a generic message.
-# The raw text is rewritten into a short spoken-friendly Japanese sentence by
-# a backgrounded `claude -p` call (file paths/identifiers/etc. dropped) so the
-# hook itself returns immediately; falls back to the raw (truncated) text if
-# that call fails, times out, or is unavailable.
-# AGENT_REPORT_SUMMARIZING guards against the summarizer's own `claude -p`
-# call re-triggering this same Stop hook recursively.
+# The raw text can be rewritten into a short spoken-friendly Japanese sentence
+# by a configured summarizer. The default summarizer is `none`, which speaks the
+# raw (truncated) text without calling an LLM. AGENT_REPORT_SUMMARIZING guards
+# against the summarizer's own agent command re-triggering this same Stop hook
+# recursively.
 # Always exits 0 - this is cosmetic and must never affect the stop decision.
 set -uo pipefail
 
@@ -58,6 +57,26 @@ speak() {
   play_sound /System/Library/Sounds/Bottle.aiff
 }
 
+speak_report_text() {
+  local text="$1"
+
+  if [ "$tool" = "cursor" ] && declare -f agent_utils_cursor_speak >/dev/null 2>&1; then
+    AGENT_UTILS_CURSOR_KILL_WEAK=1
+    if agent_utils_cursor_speak "$tool" "$payload" 2.5 30 "$text" \
+      sound /System/Library/Sounds/Glass.aiff \
+      say "報告します。" \
+      say "$text" \
+      say "以上です。" \
+      sound /System/Library/Sounds/Bottle.aiff; then
+      unset AGENT_UTILS_CURSOR_KILL_WEAK
+      return 0
+    fi
+    unset AGENT_UTILS_CURSOR_KILL_WEAK
+  fi
+
+  speak "$text"
+}
+
 extract_codex_transcript_message() {
   local transcript_path="$1"
   tail -n 500 "$transcript_path" 2>/dev/null | jq -rs '
@@ -99,6 +118,166 @@ extract_generic_transcript_message() {
   ' 2>/dev/null
 }
 
+agent_utils_config_file() {
+  if [ -n "${AGENT_UTILS_CONFIG_FILE:-}" ]; then
+    printf '%s' "$AGENT_UTILS_CONFIG_FILE"
+  elif [ -n "${HOME:-}" ]; then
+    printf '%s/.config/agent-utils/config.json' "$HOME"
+  else
+    printf ''
+  fi
+}
+
+agent_utils_report_summarizer_name() {
+  local current_tool="$1"
+  local config_file env_tool env_name env_value
+
+  env_tool="$(printf '%s' "$current_tool" | tr '[:lower:]' '[:upper:]' | tr '-' '_')"
+  env_name="AGENT_UTILS_REPORT_SUMMARIZER_${env_tool}"
+  env_value="$(printenv "$env_name" 2>/dev/null || true)"
+  if [ -n "$env_value" ]; then
+    printf '%s' "$env_value"
+    return 0
+  fi
+
+  if [ -n "${AGENT_UTILS_REPORT_SUMMARIZER:-}" ]; then
+    printf '%s' "$AGENT_UTILS_REPORT_SUMMARIZER"
+    return 0
+  fi
+
+  config_file="$(agent_utils_config_file)"
+  if [ -n "$config_file" ] && [ -r "$config_file" ] && command -v jq >/dev/null 2>&1; then
+    jq -r --arg tool "$current_tool" '
+      .agentReportSay.summarizer.byTool[$tool]
+      // .agentReportSay.summarizer.default
+      // "none"
+    ' "$config_file" 2>/dev/null
+    return 0
+  fi
+
+  printf 'none'
+}
+
+agent_utils_report_summarizer_profile() {
+  local profile_name="$1"
+  local config_file
+
+  if [ "$profile_name" = "none" ]; then
+    printf '{"type":"none"}'
+    return 0
+  fi
+
+  config_file="$(agent_utils_config_file)"
+  if [ -n "$config_file" ] && [ -r "$config_file" ] && command -v jq >/dev/null 2>&1; then
+    jq -c --arg name "$profile_name" '
+      .agentReportSay.summarizer.profiles[$name] // empty
+    ' "$config_file" 2>/dev/null
+  fi
+}
+
+agent_utils_jq_walk_strings() {
+  cat <<'JQ'
+def walk(f):
+  . as $in
+  | if type == "object" then
+      reduce keys_unsorted[] as $key
+        ({}; . + { ($key): ($in[$key] | walk(f)) }) | f
+    elif type == "array" then
+      map(walk(f)) | f
+    else
+      f
+    end;
+walk(if type == "string" then gsub("\\{prompt\\}"; $prompt) else . end)
+JQ
+}
+
+agent_utils_run_command_summarizer() {
+  local profile_json="$1"
+  local prompt="$2"
+  local inherited_timeout="${3:-}"
+  local command_name timeout_seconds arg
+  local -a args
+
+  command_name="$(jq -r '.command // empty' <<<"$profile_json" 2>/dev/null)"
+  [ -n "$command_name" ] || return 1
+  command -v "$command_name" >/dev/null 2>&1 || return 1
+
+  timeout_seconds="$(jq -r --arg inherited "$inherited_timeout" '.timeoutSeconds // ($inherited | select(. != "") | tonumber) // 25 | floor' <<<"$profile_json" 2>/dev/null)"
+  [ -n "$timeout_seconds" ] || timeout_seconds=25
+
+  args=()
+  while IFS= read -r -d '' arg; do
+    args+=("$arg")
+  done < <(jq -j --arg prompt "$prompt" '.args[]? | gsub("\\{prompt\\}"; $prompt), "\u0000"' <<<"$profile_json" 2>/dev/null)
+
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$timeout_seconds" "$command_name" "${args[@]}" 2>/dev/null
+  else
+    "$command_name" "${args[@]}" 2>/dev/null
+  fi
+}
+
+agent_utils_run_http_json_summarizer() {
+  local profile_json="$1"
+  local prompt="$2"
+  local url method timeout_seconds output_filter body response header
+  local -a curl_args
+
+  command -v curl >/dev/null 2>&1 || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+
+  url="$(jq -r '.url // empty' <<<"$profile_json" 2>/dev/null)"
+  [ -n "$url" ] || return 1
+  method="$(jq -r '.method // "POST"' <<<"$profile_json" 2>/dev/null)"
+  timeout_seconds="$(jq -r '.timeoutSeconds // 25 | floor' <<<"$profile_json" 2>/dev/null)"
+  [ -n "$timeout_seconds" ] || timeout_seconds=25
+  output_filter="$(jq -r '.output // ".response"' <<<"$profile_json" 2>/dev/null)"
+  [ -n "$output_filter" ] || output_filter=".response"
+  body="$(jq -c --arg prompt "$prompt" "$(agent_utils_jq_walk_strings)" <<<"$(jq -c '.body // {}' <<<"$profile_json" 2>/dev/null)" 2>/dev/null)"
+  [ -n "$body" ] || body='{}'
+
+  curl_args=(-fsS --max-time "$timeout_seconds" -X "$method" -H "Content-Type: application/json")
+  while IFS= read -r -d '' header; do
+    curl_args+=(-H "$header")
+  done < <(jq -j '.headers // {} | to_entries[]? | "\(.key): \(.value)\u0000"' <<<"$profile_json" 2>/dev/null)
+
+  response="$(curl "${curl_args[@]}" --data "$body" "$url" 2>/dev/null)" || return 1
+  jq -r "$output_filter // empty" <<<"$response" 2>/dev/null
+}
+
+agent_utils_generate_summary() {
+  local current_tool="$1"
+  local prompt="$2"
+  local raw_text="$3"
+  local profile_name profile_json profile_type subprofile inherited_timeout
+
+  profile_name="$(agent_utils_report_summarizer_name "$current_tool")"
+  profile_json="$(agent_utils_report_summarizer_profile "$profile_name")"
+  [ -n "$profile_json" ] || profile_json='{"type":"none"}'
+
+  profile_type="$(jq -r '.type // "none"' <<<"$profile_json" 2>/dev/null)"
+  case "$profile_type" in
+    none)
+      printf '%s' "$raw_text"
+      ;;
+    command)
+      agent_utils_run_command_summarizer "$profile_json" "$prompt"
+      ;;
+    commandByTool)
+      subprofile="$(jq -c --arg tool "$current_tool" '.commands[$tool] // empty' <<<"$profile_json" 2>/dev/null)"
+      [ -n "$subprofile" ] || return 1
+      inherited_timeout="$(jq -r '.timeoutSeconds // empty' <<<"$profile_json" 2>/dev/null)"
+      agent_utils_run_command_summarizer "$subprofile" "$prompt" "$inherited_timeout"
+      ;;
+    httpJson)
+      agent_utils_run_http_json_summarizer "$profile_json" "$prompt"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 [ "$ENABLE_HOOKS" = "true" ] || exit 0
 [ "$ENABLE_REPORT" = "say" ] || exit 0
 
@@ -123,43 +302,19 @@ fallback="${tool} の作業が完了しました。"
 [ "$outcome" = "gaveup" ] && fallback="${tool} の作業が終了しました。テストは失敗したままです。"
 
 if [ -z "$message" ]; then
-  if [ "$tool" = "cursor" ] && declare -f agent_utils_cursor_speak >/dev/null 2>&1; then
-    AGENT_UTILS_CURSOR_KILL_WEAK=1
-    if agent_utils_cursor_speak "$tool" "$payload" 2.5 30 "$fallback" \
-      sound /System/Library/Sounds/Glass.aiff \
-      say "報告します。" \
-      say "$fallback" \
-      say "以上です。" \
-      sound /System/Library/Sounds/Bottle.aiff; then
-      exit 0
-    fi
-    unset AGENT_UTILS_CURSOR_KILL_WEAK
-  fi
-  speak "$fallback"
+  speak_report_text "$fallback"
   exit 0
 fi
 
 raw="$(printf '%s' "$message" | tr '\n\r' '  ' | cut -c1-200)"
 
-# Recursive invocation from our own summarizer's `claude -p` call below
-# (it fires this same Stop hook via the user's Claude Code settings) -
+# Recursive invocation from our own summarizer command/API below
+# (it may fire this same Stop hook via the user's agent settings) -
 # stay silent, the outer call already speaks the summary.
 [ "${AGENT_REPORT_SUMMARIZING:-}" = "1" ] && exit 0
 
-if ! command -v claude >/dev/null 2>&1; then
-  if [ "$tool" = "cursor" ] && declare -f agent_utils_cursor_speak >/dev/null 2>&1; then
-    AGENT_UTILS_CURSOR_KILL_WEAK=1
-    if agent_utils_cursor_speak "$tool" "$payload" 2.5 30 "$raw" \
-      sound /System/Library/Sounds/Glass.aiff \
-      say "報告します。" \
-      say "$raw" \
-      say "以上です。" \
-      sound /System/Library/Sounds/Bottle.aiff; then
-      exit 0
-    fi
-    unset AGENT_UTILS_CURSOR_KILL_WEAK
-  fi
-  speak "$raw"
+if [ "$(agent_utils_report_summarizer_name "$tool")" = "none" ]; then
+  speak_report_text "$raw"
   exit 0
 fi
 
@@ -180,30 +335,14 @@ fi
 ---
 ${message}"
 
-  if command -v timeout >/dev/null 2>&1; then
-    summary="$(timeout 25 claude -p "$prompt" --model haiku 2>/dev/null)"
-  else
-    summary="$(claude -p "$prompt" --model haiku 2>/dev/null)"
-  fi
+  summary="$(agent_utils_generate_summary "$tool" "$prompt" "$raw" 2>/dev/null)"
   summary="$(printf '%s' "$summary" | tr '\n\r' '  ' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | cut -c1-200)"
 
   [ -z "$summary" ] && summary="$raw"
   if [ -n "$cursor_request_id" ] && declare -f agent_utils_say_request_is_latest >/dev/null 2>&1; then
     agent_utils_say_request_is_latest "$cursor_latest_file" "$cursor_request_id" || exit 0
   fi
-  if [ "$tool" = "cursor" ] && declare -f agent_utils_cursor_speak >/dev/null 2>&1; then
-    AGENT_UTILS_CURSOR_KILL_WEAK=1
-    if agent_utils_cursor_speak "$tool" "$payload" 2.5 30 "$summary" \
-      sound /System/Library/Sounds/Glass.aiff \
-      say "報告します。" \
-      say "$summary" \
-      say "以上です。" \
-      sound /System/Library/Sounds/Bottle.aiff; then
-      exit 0
-    fi
-    unset AGENT_UTILS_CURSOR_KILL_WEAK
-  fi
-  speak "$summary"
+  speak_report_text "$summary"
 ) &
 disown 2>/dev/null || true
 

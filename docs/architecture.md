@@ -155,3 +155,18 @@ Codex / Cursor / GitHub Copilot は Claude Code ほどフック機構が枯れ�
 
 - `jq`: `install.sh` / `uninstall.sh` の必須依存。
 - `hooks/` 配下のスクリプトは macOS の `say` / `afplay` コマンドを前提とする。`uname -s` が `Darwin` でない、または `say` コマンドが無い環境ではフック自体が何もせず `exit 0` する（他OSでは無害な no-op）。
+
+## 9. ユーザー設定
+
+フックの実行時設定は、プロジェクト単位の `.env` やリポジトリ直下の未追跡ファイルではなく、ユーザー設定として `~/.config/agent-utils/config.json` に置く。`AGENT_UTILS_CONFIG_FILE` が指定されている場合は、そのパスを優先する。
+
+`agent-report-say` の要約器は既定で `none` とする。要約器の選択は、環境変数 `AGENT_UTILS_REPORT_SUMMARIZER_<TOOL>`、環境変数 `AGENT_UTILS_REPORT_SUMMARIZER`、設定ファイルの `agentReportSay.summarizer.byTool[tool]`、設定ファイルの `agentReportSay.summarizer.default`、`none` の順に解決する。
+
+`agentReportSay.summarizer.profiles` には named profile を定義する。profile type は以下をサポートする:
+
+- `none`: LLM/API を呼ばず、抽出テキストの先頭200文字を読み上げる。
+- `command`: `command` と `args` 配列で外部コマンドを実行する。`args` 内の `{prompt}` は要約プロンプトに置換する。
+- `commandByTool`: 呼び出し元ツール名ごとに `commands[tool]` の `command`/`args` を使い分ける。
+- `httpJson`: `curl` で JSON API を呼び出し、レスポンスを `output` の jq filter で抽出する。`body` 内の `{prompt}` は要約プロンプトに置換する。
+
+設定された要約器の失敗、タイムアウト、未インストール、設定不備は全てフェイルセーフに扱い、`raw`（抽出テキストの先頭200文字）読み上げへフォールバックする。要約器実行時は `AGENT_REPORT_SUMMARIZING=1` を子プロセスに渡し、同じエージェントツールを要約器として使う場合でも再帰発火を抑制する。

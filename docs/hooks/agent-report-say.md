@@ -41,7 +41,7 @@ Codex 以外、または Codex の専用抽出で取れなかった場合:
 ### 出力
 
 - 標準出力・標準エラーへの通常出力はなし。
-- 副作用として macOS の音声合成（`say`）とシステムサウンド再生（`afplay`）、および要約生成のためのバックグラウンド `claude -p` 呼び出しを行う。
+- 副作用として macOS の音声合成（`say`）とシステムサウンド再生（`afplay`）を行う。要約器が設定されている場合のみ、要約生成のための外部コマンドまたは HTTP API 呼び出しをバックグラウンドで行う。
 
 ### 終了コード
 
@@ -64,15 +64,87 @@ Codex 以外、または Codex の専用抽出で取れなかった場合:
 
 抽出されたメッセージが空の場合、要約処理を行わずこのフォールバックメッセージをそのまま読み上げる。
 
+## 設定
+
+設定ファイルは既定で `~/.config/agent-utils/config.json` を参照する。`AGENT_UTILS_CONFIG_FILE` を指定した場合は、そのパスを優先する。
+
+要約器の選択は以下の優先順位で決まる:
+
+1. `AGENT_UTILS_REPORT_SUMMARIZER_<TOOL>`（例: `AGENT_UTILS_REPORT_SUMMARIZER_CODEX`）
+2. `AGENT_UTILS_REPORT_SUMMARIZER`
+3. `~/.config/agent-utils/config.json` の `agentReportSay.summarizer.byTool[tool]`
+4. `~/.config/agent-utils/config.json` の `agentReportSay.summarizer.default`
+5. `none`
+
+設定例:
+
+```json
+{
+  "version": 1,
+  "agentReportSay": {
+    "summarizer": {
+      "default": "none",
+      "byTool": {
+        "cursor": "ollama-local"
+      },
+      "profiles": {
+        "none": {
+          "type": "none"
+        },
+        "claude-haiku": {
+          "type": "command",
+          "command": "claude",
+          "args": ["-p", "{prompt}", "--model", "haiku"],
+          "timeoutSeconds": 25
+        },
+        "current-agent": {
+          "type": "commandByTool",
+          "timeoutSeconds": 25,
+          "commands": {
+            "claude": {
+              "command": "claude",
+              "args": ["-p", "{prompt}", "--model", "haiku"]
+            },
+            "codex": {
+              "command": "codex",
+              "args": ["exec", "{prompt}"]
+            }
+          }
+        },
+        "ollama-local": {
+          "type": "httpJson",
+          "url": "http://localhost:11434/api/generate",
+          "method": "POST",
+          "body": {
+            "model": "qwen2.5:3b",
+            "prompt": "{prompt}",
+            "stream": false
+          },
+          "output": ".response",
+          "timeoutSeconds": 25
+        }
+      }
+    }
+  }
+}
+```
+
+サポートする profile type:
+
+- `none`: LLM 要約を行わず、抽出テキストの先頭200文字を読み上げる。
+- `command`: `command` と `args` 配列で指定したコマンドを実行する。`args` 内の `{prompt}` は要約プロンプトに置換される。
+- `commandByTool`: 呼び出し元ツール名ごとに `commands[tool]` の `command`/`args` を使い分ける。
+- `httpJson`: `curl` で JSON API を呼び出し、レスポンスを `output` の jq filter で抽出する。`body` 内の文字列に含まれる `{prompt}` は要約プロンプトに置換される。
+
 ## 要約ロジック
 
 抽出したメッセージ（`message`）が取得できた場合:
 
 1. 改行を空白に置換し、先頭200文字に切り詰めたもの（`raw`）を要約の入力・最終フォールバックとして保持する。
-2. **再帰防止**: 環境変数 `AGENT_REPORT_SUMMARIZING=1` が既にセットされている場合、これは要約用の `claude -p` 呼び出し自身が同じ Stop フックを再度発火させたケースなので、何もせず `exit 0` する（外側の呼び出しが既に読み上げ済みのため）。
-3. `claude` コマンドが利用できない場合は、要約せず `raw` をそのまま読み上げて終了する。
-4. `claude` コマンドが利用できる場合、以下をバックグラウンドで実行する（ジョブは `disown` し、フック自体は即座に返る）:
-   - `AGENT_REPORT_SUMMARIZING=1` をエクスポートした上で、`claude -p "<要約プロンプト>" --model haiku` をタイムアウト付き（`timeout` コマンドが利用可能なら25秒）で実行する。
+2. **再帰防止**: 環境変数 `AGENT_REPORT_SUMMARIZING=1` が既にセットされている場合、これは要約器が同じ Stop フックを再度発火させたケースなので、何もせず `exit 0` する（外側の呼び出しが既に読み上げ済みのため）。
+3. 選択された要約器が `none` の場合は、要約せず `raw` をそのまま読み上げて終了する。
+4. 要約器が `command` / `commandByTool` / `httpJson` の場合、以下をバックグラウンドで実行する（ジョブは `disown` し、フック自体は即座に返る）:
+   - `AGENT_REPORT_SUMMARIZING=1` をエクスポートした上で、設定された要約器を実行する。
    - 要約プロンプトの指示: 「音声で聞いてすぐ理解できる自然な日本語1〜2文に要約する。ファイルパス・変数名・関数名・テーブル名・コードスニペットなどの技術的固有名詞は具体名を出さず意味だけを言い換える。要約文以外は出力しない」
    - 得られた出力を改行除去・トリム・先頭200文字切り詰めした上で `summary` とする。
    - `summary` が空なら `raw` にフォールバックする。
@@ -92,7 +164,7 @@ Cursor の完了報告で要約生成を行う場合、session key が取れた�
 
 ## 非機能要件
 
-- 非ブロッキング: 要約生成（LLM呼び出し）を含む一連の処理はバックグラウンド化し、呼び出し元の Stop フック処理を待たせてはならない。
-- 再帰防止: 要約用の `claude -p` 呼び出しが同じフック設定（Stop hook）を経由して自分自身を再発火させても、無限ループや二重読み上げを起こさないこと（`AGENT_REPORT_SUMMARIZING` ガード）。
-- フェイルセーフ: 要約用LLM呼び出しのタイムアウト・失敗時は、必ず `raw`（生メッセージの先頭200文字）にフォールバックして読み上げを継続する。
+- 非ブロッキング: 要約生成を含む一連の処理はバックグラウンド化し、呼び出し元の Stop フック処理を待たせてはならない。
+- 再帰防止: 要約器が同じフック設定（Stop hook）を経由して自分自身を再発火させても、無限ループや二重読み上げを起こさないこと（`AGENT_REPORT_SUMMARIZING` ガード）。
+- フェイルセーフ: 要約器のタイムアウト・失敗時は、必ず `raw`（生メッセージの先頭200文字）にフォールバックして読み上げを継続する。
 - 個人情報・機密情報を扱う前提はない。要約プロンプトはファイルパス・識別子等の固有名詞を意図的に音声から排除する仕様である。
