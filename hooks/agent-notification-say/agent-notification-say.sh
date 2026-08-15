@@ -75,7 +75,7 @@ if [ -z "$message" ]; then
   fi
 fi
 
-raw="$(printf '%s' "$message" | tr '\n\r' '  ' | cut -c1-200)"
+raw="$(printf '%s' "$message" | tr '\n\r' '  ' | cut -c1-1000)"
 
 if [ "$tool" = "cursor" ]; then
   raw="$(printf '%s' "$raw" | sed 's/ツールの実行許可を求めています/ツールを実行します/g; s/実行許可を求めています/ツールを実行します/g; s/確認をお願いします/ツールを実行します/g')"

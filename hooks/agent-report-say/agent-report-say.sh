@@ -306,7 +306,7 @@ if [ -z "$message" ]; then
   exit 0
 fi
 
-raw="$(printf '%s' "$message" | tr '\n\r' '  ' | cut -c1-200)"
+raw="$(printf '%s' "$message" | tr '\n\r' '  ' | cut -c1-1000)"
 
 # Recursive invocation from our own summarizer command/API below
 # (it may fire this same Stop hook via the user's agent settings) -
@@ -336,7 +336,7 @@ fi
 ${message}"
 
   summary="$(agent_utils_generate_summary "$tool" "$prompt" "$raw" 2>/dev/null)"
-  summary="$(printf '%s' "$summary" | tr '\n\r' '  ' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | cut -c1-200)"
+  summary="$(printf '%s' "$summary" | tr '\n\r' '  ' | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' | cut -c1-1000)"
 
   [ -z "$summary" ] && summary="$raw"
   if [ -n "$cursor_request_id" ] && declare -f agent_utils_say_request_is_latest >/dev/null 2>&1; then
