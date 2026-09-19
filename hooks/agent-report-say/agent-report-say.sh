@@ -11,6 +11,8 @@
 # raw (truncated) text without calling an LLM. AGENT_REPORT_SUMMARIZING guards
 # against the summarizer's own agent command re-triggering this same Stop hook
 # recursively.
+# Stays silent for Codex voice conversation (GPT-Live / realtime) turns, whose
+# reply the voice model already speaks.
 # Always exits 0 - this is cosmetic and must never affect the stop decision.
 set -uo pipefail
 
@@ -280,6 +282,12 @@ agent_utils_generate_summary() {
 
 [ "$ENABLE_HOOKS" = "true" ] || exit 0
 [ "$ENABLE_REPORT" = "say" ] || exit 0
+
+# Codex voice conversation turn: the voice model already speaks the reply.
+if [ "$tool" = "codex" ] && declare -f agent_utils_codex_is_voice_turn >/dev/null 2>&1 \
+  && agent_utils_codex_is_voice_turn "$payload"; then
+  exit 0
+fi
 
 message=""
 if command -v jq >/dev/null 2>&1 && [ -n "$payload" ]; then

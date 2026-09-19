@@ -55,7 +55,17 @@ Codex 以外、または Codex の専用抽出で取れなかった場合:
 2. `say` コマンドが存在しない
 3. `ENABLE_HOOKS` が `true` でない（スクリプト内ハードコード、現状は常に `true`）
 4. `ENABLE_REPORT` が `say` でない（スクリプト内ハードコード、現状は常に `say`）
-5. メッセージ抽出（下記）の結果が空 → フォールバックメッセージを読み上げてから `exit 0`
+5. `<tool>` が `codex` で、Codex の音声会話（GPT-Live / realtime）のターンと判定された（下記「Codex 音声会話の判定」参照）。音声モデルが自分で返答を読み上げるため、二重に読み上げないようにする
+6. メッセージ抽出（下記）の結果が空 → フォールバックメッセージを読み上げてから `exit 0`
+
+## Codex 音声会話の判定
+
+Codex のフックの入力と環境変数には、音声会話かどうかを示す項目がない。そのため `hooks/lib/say-control.sh` の `agent_utils_codex_is_voice_turn` で、`transcript_path` が指す rollout JSONL を読んで判定する。次のどちらかに当てはまれば音声会話とみなす。
+
+- 1行目の `session_meta` にある `.payload.thread_source` が `realtime_voice` または `voice_chat`
+- 末尾500行のうち、最後の `event_msg` / `task_started` より後ろにある user の `response_item` メッセージが、`<realtime_delegation>` で始まる（音声モデルから Codex への委譲文）
+
+`jq` がない、`transcript_path` が読めない、`hooks/lib/say-control.sh` を読み込めない場合は、判定せずに従来どおり読み上げる。
 
 ## フォールバックメッセージ
 

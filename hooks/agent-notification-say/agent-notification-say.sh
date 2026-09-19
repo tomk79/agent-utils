@@ -7,6 +7,8 @@
 # agent-report-say.sh. Reads the Notification hook JSON payload on stdin and
 # speaks its `message` field as-is (no LLM summarization - these messages are
 # already short, e.g. `Ready to execute: Bash "npm test"`).
+# Stays silent for Codex voice conversation (GPT-Live / realtime) turns, whose
+# reply the voice model already speaks.
 # Always exits 0 - cosmetic only, must never delay or block the permission
 # prompt itself.
 set -uo pipefail
@@ -61,6 +63,12 @@ speak_cursor() {
 
 [ "$ENABLE_HOOKS" = "true" ] || exit 0
 [ "$ENABLE_REPORT" = "say" ] || exit 0
+
+# Codex voice conversation turn: the voice model already speaks the reply.
+if [ "$tool" = "codex" ] && declare -f agent_utils_codex_is_voice_turn >/dev/null 2>&1 \
+  && agent_utils_codex_is_voice_turn "$payload"; then
+  exit 0
+fi
 
 message=""
 if command -v jq >/dev/null 2>&1 && [ -n "$payload" ]; then
