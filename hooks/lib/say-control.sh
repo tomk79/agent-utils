@@ -254,10 +254,13 @@ agent_utils_cursor_speak() {
 # Codex voice conversations (GPT-Live / realtime) hand work to the agent as a
 # normal turn whose user message is wrapped in <realtime_delegation>. The voice
 # model speaks the agent's reply itself, so our hooks must stay silent for such
-# turns. Returns 0 for a voice turn, 1 otherwise (including when unknown).
+# turns. Only the current turn (after the last task_started) is inspected, so
+# typed turns in the same thread after the voice session ends still speak.
+# Unparseable lines are skipped. Returns 0 for a voice turn, 1 otherwise
+# (including when unknown).
 agent_utils_codex_is_voice_turn() {
   local payload="$1"
-  local transcript_path thread_source
+  local transcript_path
 
   command -v jq >/dev/null 2>&1 || return 1
   [ -n "$payload" ] || return 1
@@ -265,18 +268,19 @@ agent_utils_codex_is_voice_turn() {
   transcript_path="$(jq -r '.transcript_path // .transcriptPath // empty' <<<"$payload" 2>/dev/null)"
   [ -n "$transcript_path" ] && [ -r "$transcript_path" ] || return 1
 
-  thread_source="$(head -n 1 "$transcript_path" 2>/dev/null | jq -r 'select(.type=="session_meta") | .payload.thread_source // empty' 2>/dev/null)"
-  case "$thread_source" in
-    realtime_voice|voice_chat) return 0 ;;
-  esac
+  tail -n 500 "$transcript_path" 2>/dev/null | jq -Rne '
+    def text_of:
+      if type == "array" then map(if type == "object" then (.text // "" | tostring) else tostring end) | join("")
+      elif type == "string" then .
+      else "" end;
 
-  tail -n 500 "$transcript_path" 2>/dev/null | jq -es '
-    ([to_entries[] | select(.value.type=="event_msg" and .value.payload.type=="task_started") | .key] | last // -1) as $start
-    | [.[($start + 1):][]
-        | select(.type=="response_item" and .payload.type=="message" and .payload.role=="user")
-        | [.payload.content[]? | (.text // empty)] | join("")
-        | sub("^\\s+"; "")
-        | select(startswith("<realtime_delegation>"))]
+    [inputs | fromjson? | select(type == "object")] as $items
+    | ([$items | to_entries[] | select(.value.type == "event_msg" and .value.payload.type? == "task_started") | .key] | last // -1) as $start
+    | [$items[($start + 1):][]
+        | select(
+            (.type == "turn_context" and .payload.realtime_active? == true)
+            or (.type == "response_item" and .payload.type? == "message" and .payload.role? == "user"
+                and (.payload.content | text_of | sub("^\\s+"; "") | startswith("<realtime_delegation>"))))]
     | length > 0
   ' >/dev/null 2>&1
 }
