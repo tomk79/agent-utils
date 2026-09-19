@@ -168,5 +168,6 @@ Codex / Cursor / GitHub Copilot は Claude Code ほどフック機構が枯れ�
 - `command`: `command` と `args` 配列で外部コマンドを実行する。`args` 内の `{prompt}` は要約プロンプトに置換する。
 - `commandByTool`: 呼び出し元ツール名ごとに `commands[tool]` の `command`/`args` を使い分ける。
 - `httpJson`: `curl` で JSON API を呼び出し、レスポンスを `output` の jq filter で抽出する。`body` 内の `{prompt}` は要約プロンプトに置換する。
+- `appleFoundationModels`: macOS 標準のオンデバイス LLM（FoundationModels フレームワーク）で要約する。Swift 製の CLI（`hooks/lib/fm-summarize/main.swift`）を `install.sh` が `hooks/lib/bin/` にビルドし、hook は共有ライブラリ（`agent-utils-lib`）経由でこれを実行する。
 
 設定された要約器の失敗、タイムアウト、未インストール、設定不備は全てフェイルセーフに扱い、`raw`（抽出テキストの先頭200文字）読み上げへフォールバックする。要約器実行時は `AGENT_REPORT_SUMMARIZING=1` を子プロセスに渡し、同じエージェントツールを要約器として使う場合でも再帰発火を抑制する。

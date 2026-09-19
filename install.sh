@@ -140,6 +140,13 @@ for c in "${SELECTED[@]}"; do
   install_one "$feature_dir" "$integ"
 done
 
+for c in "${SELECTED[@]}"; do
+  if [ "$(basename "${c%%::*}")" = "agent-report-say" ]; then
+    build_fm_summarizer
+    break
+  fi
+done
+
 echo
 echo "完了: $INSTALLED_COUNT 件インストール, $SKIPPED_COUNT 件スキップ"
 if [ "$CODEX_TRUST_NOTICE" = true ]; then

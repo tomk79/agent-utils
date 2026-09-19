@@ -25,22 +25,24 @@ outcome="${2:-done}" # done | gaveup
 payload="$(cat 2>/dev/null || true)"
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+agent_utils_lib_dir=""
 if [ -r "$script_dir/agent-utils-lib/say-control.sh" ]; then
-  # shellcheck source=/dev/null
-  source "$script_dir/agent-utils-lib/say-control.sh"
+  agent_utils_lib_dir="$script_dir/agent-utils-lib"
 else
   script_real="$script_dir/$(basename "${BASH_SOURCE[0]}")"
   if [ -L "$script_real" ]; then
     script_real="$(readlink "$script_real")"
     script_real_dir="$(cd "$(dirname "$script_real")" && pwd)"
     if [ -r "$script_real_dir/../lib/say-control.sh" ]; then
-      # shellcheck source=/dev/null
-      source "$script_real_dir/../lib/say-control.sh"
+      agent_utils_lib_dir="$script_real_dir/../lib"
     fi
   elif [ -r "$script_dir/../lib/say-control.sh" ]; then
-    # shellcheck source=/dev/null
-    source "$script_dir/../lib/say-control.sh"
+    agent_utils_lib_dir="$script_dir/../lib"
   fi
+fi
+if [ -n "$agent_utils_lib_dir" ]; then
+  # shellcheck source=/dev/null
+  source "$agent_utils_lib_dir/say-control.sh"
 fi
 
 [ "$(uname -s 2>/dev/null)" = "Darwin" ] || exit 0
@@ -247,6 +249,25 @@ agent_utils_run_http_json_summarizer() {
   jq -r "$output_filter // empty" <<<"$response" 2>/dev/null
 }
 
+agent_utils_run_apple_fm_summarizer() {
+  local profile_json="$1"
+  local prompt="$2"
+  local bin timeout_seconds max_input_chars
+  local -a args
+
+  [ -n "$agent_utils_lib_dir" ] || return 1
+  bin="$agent_utils_lib_dir/bin/agent-utils-fm-summarize"
+  [ -x "$bin" ] || return 1
+
+  timeout_seconds="$(jq -r '.timeoutSeconds // 25' <<<"$profile_json" 2>/dev/null)"
+  [ -n "$timeout_seconds" ] || timeout_seconds=25
+  args=(--timeout "$timeout_seconds")
+  max_input_chars="$(jq -r '.maxInputChars // empty | floor' <<<"$profile_json" 2>/dev/null)"
+  [ -n "$max_input_chars" ] && args+=(--max-input-chars "$max_input_chars")
+
+  printf '%s' "$prompt" | "$bin" "${args[@]}" 2>/dev/null
+}
+
 agent_utils_generate_summary() {
   local current_tool="$1"
   local prompt="$2"
@@ -273,6 +294,9 @@ agent_utils_generate_summary() {
       ;;
     httpJson)
       agent_utils_run_http_json_summarizer "$profile_json" "$prompt"
+      ;;
+    appleFoundationModels)
+      agent_utils_run_apple_fm_summarizer "$profile_json" "$prompt"
       ;;
     *)
       return 1

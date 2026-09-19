@@ -139,6 +139,10 @@ Codex のフックの入力と環境変数には、音声会話かどうかを�
           },
           "output": ".response",
           "timeoutSeconds": 25
+        },
+        "apple-local": {
+          "type": "appleFoundationModels",
+          "timeoutSeconds": 25
         }
       }
     }
@@ -152,6 +156,11 @@ Codex のフックの入力と環境変数には、音声会話かどうかを�
 - `command`: `command` と `args` 配列で指定したコマンドを実行する。`args` 内の `{prompt}` は要約プロンプトに置換される。
 - `commandByTool`: 呼び出し元ツール名ごとに `commands[tool]` の `command`/`args` を使い分ける。
 - `httpJson`: `curl` で JSON API を呼び出し、レスポンスを `output` の jq filter で抽出する。`body` 内の文字列に含まれる `{prompt}` は要約プロンプトに置換される。
+- `appleFoundationModels`: macOS 標準のオンデバイス LLM（Apple Intelligence / FoundationModels フレームワーク）で要約する。`install.sh` がビルドした `hooks/lib/bin/agent-utils-fm-summarize` に、要約プロンプトを stdin で渡して実行する。
+  - 前提条件: macOS 26 以降、Apple Intelligence が有効、Xcode Command Line Tools（`swiftc`）。条件を満たさない環境では `install.sh` がビルドをスキップする。
+  - `timeoutSeconds`（既定25）: CLI 自身がタイムアウトを判定する（macOS には `timeout` コマンドが標準で無いため）。
+  - `maxInputChars`（既定2500）: モデルのコンテキスト長（約4,096トークン）に収めるため、要約プロンプトを先頭からこの文字数で切り詰める。指示文はプロンプトの先頭にあるため残る。
+  - モデルが利用できない、ガードレールで拒否された、コンテキスト長を超えた、タイムアウトした、といった失敗時は、他の要約器と同じく `raw` の読み上げにフォールバックする。
 
 ## 要約ロジック
 

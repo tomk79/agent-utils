@@ -30,6 +30,7 @@ cd agent-utils
 
 - `jq` が必須です（`brew install jq`）
 - `hooks/` 配下のスクリプトは macOS の `say`/`afplay` コマンドを前提にしています。他OSではフック自体が何もせず終了します
+- 要約器 `appleFoundationModels` を使う場合のみ、macOS 26 以降で Apple Intelligence が有効になっていることと、Xcode Command Line Tools（`swiftc`）が必要です。`./install.sh` で `agent-report-say` を導入するときに、要約用の CLI が `hooks/lib/bin/` にビルドされます
 
 ### 設定
 
@@ -67,6 +68,10 @@ cd agent-utils
           },
           "output": ".response",
           "timeoutSeconds": 25
+        },
+        "apple-local": {
+          "type": "appleFoundationModels",
+          "timeoutSeconds": 25
         }
       }
     }
@@ -74,7 +79,7 @@ cd agent-utils
 }
 ```
 
-`profiles` の `type` は `none` / `command` / `commandByTool` / `httpJson` を指定できます。詳細は [docs/hooks/agent-report-say.md](docs/hooks/agent-report-say.md) を参照してください。
+`profiles` の `type` は `none` / `command` / `commandByTool` / `httpJson` / `appleFoundationModels` を指定できます。`appleFoundationModels` は macOS 標準のオンデバイス LLM（Apple Intelligence）で要約するため、Ollama などのサーバーを別途起動する必要がありません。詳細は [docs/hooks/agent-report-say.md](docs/hooks/agent-report-say.md) を参照してください。
 
 ### 対応エージェント
 

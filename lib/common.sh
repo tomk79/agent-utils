@@ -206,3 +206,39 @@ settings_remove() {
   ' "$file" > "$tmp"
   mv "$tmp" "$file"
 }
+
+# Builds the Apple Foundation Models summarizer CLI used by agent-report-say's
+# `appleFoundationModels` profile into hooks/lib/bin/. Best effort: skips with
+# a notice when the OS/toolchain can't build it, and rebuilds only when the
+# source is newer than the binary.
+build_fm_summarizer() {
+  local src bin_dir bin major
+
+  src="$(shared_hook_lib)/fm-summarize/main.swift"
+  bin_dir="$(shared_hook_lib)/bin"
+  bin="$bin_dir/agent-utils-fm-summarize"
+  [ -f "$src" ] || return 0
+
+  if [ "$(uname -s 2>/dev/null)" != "Darwin" ]; then
+    return 0
+  fi
+  major="$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)"
+  if [ -z "$major" ] || [ "$major" -lt 26 ]; then
+    echo "- skip: Apple Foundation Models 要約器のビルド (macOS 26 以降が必要です)"
+    return 0
+  fi
+  if ! command -v swiftc >/dev/null 2>&1; then
+    echo "- skip: Apple Foundation Models 要約器のビルド (swiftc が見つかりません。'xcode-select --install' で導入できます)"
+    return 0
+  fi
+  if [ -x "$bin" ] && [ ! "$src" -nt "$bin" ]; then
+    return 0
+  fi
+
+  mkdir -p "$bin_dir"
+  if swiftc -O "$src" -o "$bin" >/dev/null 2>&1; then
+    echo "✓ built: $bin"
+  else
+    echo "⚠ Apple Foundation Models 要約器のビルドに失敗しました (この要約器は使えませんが、他の機能には影響しません)" >&2
+  fi
+}
